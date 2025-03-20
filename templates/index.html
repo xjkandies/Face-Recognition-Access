@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Recognition Access Control</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+        }
+        .upload-area {
+            border: 2px dashed #cbd5e1;
+            transition: all 0.3s ease;
+        }
+        .upload-area:hover {
+            border-color: #3b82f6;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-2xl mx-auto">
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <h1 class="text-4xl font-bold text-gray-800 mb-2">Face Recognition Access Control</h1>
+                <p class="text-gray-600">Upload a face image to verify access</p>
+            </div>
+
+            <!-- Main Content -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <!-- Upload Area -->
+                <div id="upload-area" class="upload-area rounded-lg p-8 text-center mb-6 cursor-pointer">
+                    <i class="fas fa-cloud-upload-alt text-4xl text-blue-500 mb-4"></i>
+                    <div class="preview-area hidden mb-4">
+                        <img id="preview-image" class="max-w-xs mx-auto rounded-lg shadow-md" />
+                    </div>
+                    <p class="text-gray-600 mb-2">Drag and drop your image here or click to browse</p>
+                    <p class="text-sm text-gray-500">Supported formats: JPG, JPEG, PNG</p>
+                    <input type="file" id="file-input" class="hidden" accept="image/*">
+                </div>
+
+                <!-- Verify Button -->
+                <div class="text-center">
+                    <button id="verify-btn" class="bg-blue-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        <i class="fas fa-shield-alt mr-2"></i>Verify Face
+                    </button>
+                </div>
+
+                <!-- Result Area -->
+                <div id="result-area" class="mt-6 text-center hidden">
+                    <div id="loading" class="hidden">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                        <p class="text-gray-600 mt-2">Verifying...</p>
+                    </div>
+                    <div id="result" class="hidden">
+                        <i id="result-icon" class="text-5xl mb-3"></i>
+                        <p id="result-message" class="text-xl font-medium"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('upload-area');
+        const fileInput = document.getElementById('file-input');
+        const previewArea = document.querySelector('.preview-area');
+        const previewImage = document.getElementById('preview-image');
+        const verifyBtn = document.getElementById('verify-btn');
+        const resultArea = document.getElementById('result-area');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+        const resultIcon = document.getElementById('result-icon');
+        const resultMessage = document.getElementById('result-message');
+
+        // Handle drag and drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            uploadArea.classList.add('border-blue-500');
+        }
+
+        function unhighlight() {
+            uploadArea.classList.remove('border-blue-500');
+        }
+
+        uploadArea.addEventListener('drop', handleDrop, false);
+        uploadArea.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFiles);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles({ target: { files } });
+        }
+
+        function handleFiles(e) {
+            const file = e.target.files[0];
+            if (file && file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImage.src = e.target.result;
+                    previewArea.classList.remove('hidden');
+                    verifyBtn.disabled = false;
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        verifyBtn.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            showLoading();
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/verify', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                handleVerificationResult(data);
+            } catch (error) {
+                showError('An error occurred. Please try again.');
+            }
+        });
+
+        function showLoading() {
+            resultArea.classList.remove('hidden');
+            loading.classList.remove('hidden');
+            result.classList.add('hidden');
+            verifyBtn.disabled = true;
+        }
+
+        function handleVerificationResult(data) {
+            if (data.success) {
+                // Play audio
+                const audio = new Audio('data:audio/mp3;base64,' + data.audio);
+                audio.play();
+
+                // Show result
+                resultIcon.className = data.is_authorized ? 
+                    'fas fa-check-circle text-green-500' : 
+                    'fas fa-times-circle text-red-500';
+                resultMessage.textContent = data.message;
+                resultMessage.className = data.is_authorized ? 
+                    'text-xl font-medium text-green-500' : 
+                    'text-xl font-medium text-red-500';
+            } else {
+                showError(data.error || 'An error occurred');
+            }
+            loading.classList.add('hidden');
+            result.classList.remove('hidden');
+            verifyBtn.disabled = false;
+        }
+
+        function showError(message) {
+            resultIcon.className = 'fas fa-exclamation-circle text-red-500';
+            resultMessage.textContent = message;
+            resultMessage.className = 'text-xl font-medium text-red-500';
+            loading.classList.add('hidden');
+            result.classList.remove('hidden');
+            verifyBtn.disabled = false;
+        }
+    </script>
+</body>
+</html>
