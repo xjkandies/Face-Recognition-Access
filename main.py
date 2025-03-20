@@ -6,6 +6,7 @@ import face_recognition_module as frm
 from gtts import gTTS
 import tempfile
 import subprocess
+import platform
 from config import (
     WINDOW_SIZE, WINDOW_TITLE, THEME,
     SUCCESS_COLOR, ERROR_COLOR, PRIMARY_COLOR,
@@ -50,13 +51,41 @@ class FaceRecognitionApp:
                 tts = gTTS(text=text, lang='en', slow=False)
                 tts.save(temp_file.name)
                 
-                # Play the audio using mpg321
-                subprocess.run(['mpg321', temp_file.name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # Play the audio based on the operating system
+                system = platform.system().lower()
+                
+                if system == 'windows':
+                    # For Windows
+                    from playsound import playsound
+                    playsound(temp_file.name)
+                elif system == 'darwin':
+                    # For macOS
+                    subprocess.run(['afplay', temp_file.name])
+                else:
+                    # For Linux
+                    try:
+                        # Try mpg321 first
+                        subprocess.run(['mpg321', temp_file.name], 
+                                    stdout=subprocess.DEVNULL, 
+                                    stderr=subprocess.DEVNULL)
+                    except FileNotFoundError:
+                        try:
+                            # Try mpg123 if mpg321 is not available
+                            subprocess.run(['mpg123', temp_file.name],
+                                        stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL)
+                        except FileNotFoundError:
+                            # Try aplay as last resort
+                            subprocess.run(['aplay', temp_file.name],
+                                        stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL)
                 
                 # Clean up the temporary file
                 os.unlink(temp_file.name)
         except Exception as e:
             print(f"Error in speech synthesis: {str(e)}")
+            # Show message in GUI if speech fails
+            messagebox.showinfo("Result", text)
 
     def setup_ui(self):
         """Set up the user interface."""

@@ -4,6 +4,8 @@ import os
 from gtts import gTTS
 import base64
 import tempfile
+import platform
+import subprocess
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -17,6 +19,58 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Load authorized faces on startup
 authorized_encodings = frm.load_authorized_faces()
+
+def generate_audio(text):
+    """Generate audio file and return base64 encoded data."""
+    try:
+        # Create temporary file for audio
+        with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+            # Generate speech with female voice
+            tts = gTTS(text=text, lang='en', slow=False)
+            tts.save(temp_file.name)
+            
+            # Test audio playback based on the operating system
+            system = platform.system().lower()
+            
+            if system == 'windows':
+                # For Windows, we'll just return the audio data
+                pass
+            elif system == 'darwin':
+                # For macOS, test with afplay
+                subprocess.run(['afplay', temp_file.name], 
+                            stdout=subprocess.DEVNULL, 
+                            stderr=subprocess.DEVNULL)
+            else:
+                # For Linux, try different players
+                try:
+                    # Try mpg321 first
+                    subprocess.run(['mpg321', temp_file.name], 
+                                stdout=subprocess.DEVNULL, 
+                                stderr=subprocess.DEVNULL)
+                except FileNotFoundError:
+                    try:
+                        # Try mpg123 if mpg321 is not available
+                        subprocess.run(['mpg123', temp_file.name],
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
+                    except FileNotFoundError:
+                        # Try aplay as last resort
+                        subprocess.run(['aplay', temp_file.name],
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
+            
+            # Read the audio file and convert to base64
+            with open(temp_file.name, 'rb') as audio_file:
+                audio_data = base64.b64encode(audio_file.read()).decode('utf-8')
+            
+            # Clean up
+            os.unlink(temp_file.name)
+            
+            return audio_data
+            
+    except Exception as e:
+        print(f"Error in speech synthesis: {str(e)}")
+        return None
 
 @app.route('/')
 def index():
@@ -41,18 +95,10 @@ def verify():
             # Verify the face
             is_authorized, message = frm.verify_face(filepath, authorized_encodings)
             
-            # Generate speech
-            speech_file = tempfile.NamedTemporaryFile(suffix='.mp3', delete=False)
-            tts = gTTS(text="Access Granted" if is_authorized else "Access Denied", 
-                      lang='en', slow=False)
-            tts.save(speech_file.name)
-            
-            # Read the audio file and convert to base64
-            with open(speech_file.name, 'rb') as audio_file:
-                audio_data = base64.b64encode(audio_file.read()).decode('utf-8')
+            # Generate audio
+            audio_data = generate_audio("Access Granted" if is_authorized else "Access Denied")
             
             # Clean up
-            os.unlink(speech_file.name)
             os.unlink(filepath)
             
             return jsonify({
@@ -68,18 +114,6 @@ def verify():
             return jsonify({'error': str(e)}), 500
     
     return jsonify({'error': 'Invalid file'}), 400
-
-@app.route('/download_audio/<filename>')
-def download_audio(filename):
-    """Route to download generated audio files"""
-    try:
-        return send_file(
-            os.path.join(app.config['UPLOAD_FOLDER'], filename),
-            as_attachment=True,
-            download_name=filename
-        )
-    except Exception as e:
-        return jsonify({'error': str(e)}), 404
 
 @app.route('/preview/<filename>')
 def preview_image(filename):
